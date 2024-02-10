@@ -1,11 +1,11 @@
 [package]
-name = "surfaces_comparison"
+name = "openmc_mcnp_adapter"
 version = "0.1.1"
-edition = "2024"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "surfaces_comparison"
+name = "openmc_mcnp_adapter"
 crate-type = ["cdylib"]
 
 [dependencies]

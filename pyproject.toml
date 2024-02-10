@@ -1,7 +1,7 @@
 [build-system]
-# requires = ["flit_core >=3.2,<4"]
+requires = ["flit_core >=3.2,<4", "maturin>=1.2,<2.0"]
 # build-backend = "flit_core.buildapi"
-requires = ["maturin>=1.2,<2.0"]
+# requires = ["maturin>=1.2,<2.0"]
 build-backend = "maturin"
 
 [project]
@@ -16,7 +16,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.7"
 
 dependencies = [
-  "numpy",
+  "numpy"
 ]
 
 classifiers = [
@@ -40,8 +40,14 @@ classifiers = [
 Discussions = "https://openmc.discourse.org"
 "Source Code" = "https://github.com/openmc-dev/openmc_mcnp_adapter"
 
+[tool.poetry]
+packages = [{include = "openmc_mcnp_adapter", from = "src"}]
+
 [project.scripts]
 mcnp_to_openmc = "openmc_mcnp_adapter.openmc_conversion:mcnp_to_openmc"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+bindings = "pyo3"
+python-source = "src"
+module-name = "openmc_mcnp_adapter.surfaces_comparison"
