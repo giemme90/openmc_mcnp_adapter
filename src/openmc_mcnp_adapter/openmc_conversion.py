@@ -15,6 +15,7 @@ from openmc.model.surface_composite import (
     RectangularParallelepiped as RPP
 )
 from openmc.model import surface_composite
+import surfaces_comparison
 
 from .parse import parse, _COMPLEMENT_RE, _CELL_FILL_RE
 
@@ -171,11 +172,11 @@ def get_openmc_surfaces(surfaces, data):
                 A, B, C, D = coeffs
                 surf = openmc.Plane(surface_id=s['id'], a=A, b=B, c=C, d=D)
         elif s['mnemonic'] == 'px':
-            surf = openmc.XPlane(surface_id=s['id'], x0=coeffs[0])
+            surf = openmc.Plane(a=1, b=0, c=0, d=coeffs[0], surface_id=s['id'])
         elif s['mnemonic'] == 'py':
-            surf = openmc.YPlane(surface_id=s['id'], y0=coeffs[0])
+            surf = openmc.Plane(a=0, b=1, c=0, d=coeffs[0], surface_id=s['id'])
         elif s['mnemonic'] == 'pz':
-            surf = openmc.ZPlane(surface_id=s['id'], z0=coeffs[0])
+            surf = openmc.Plane(a=0, b=0, c=1, d=coeffs[0], surface_id=s['id'])
         elif s['mnemonic'] == 'so':
             surf = openmc.Sphere(surface_id=s['id'], r=coeffs[0])
         elif s['mnemonic'] == 's':
@@ -318,10 +319,82 @@ def get_openmc_surfaces(surfaces, data):
 
         # For macrobodies, we also need to add generated surfaces to dictionary
         if isinstance(surf, surface_composite.CompositeSurface):
-            openmc_surfaces.update((-surf).get_surfaces())
+            surfaces_macrobodies = (-surf).get_surfaces()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", openmc.IDWarning)
+                for i, s in surfaces_macrobodies.items():
+                    if s.type == 'x-plane':
+                        s = openmc.Plane(a=1, b=0, c=0, d=s.x0, surface_id=s.id)
+                    if s.type == 'y-plane':
+                        s = openmc.Plane(a=0, b=1, c=0, d=s.y0, surface_id=s.id) 
+                    if s.type == 'z-plane':
+                        s = openmc.Plane(a=0, b=0, c=1, d=s.z0, surface_id=s.id) 
+                    openmc_surfaces[i] = s
 
     return openmc_surfaces
 
+def get_surfaces_to_be_compared(surfaces):
+
+    surfaces_openmc_comparison = {}
+    for i, surface in surfaces.items():
+        if surface.boundary_type == 'transmission':
+            surf_type = surface.type.replace('x-plane', 'plane').replace('y-plane', 'plane').replace('z-plane', 'plane')
+            if surf_type in surfaces_openmc_comparison.keys():
+                surfaces_openmc_comparison[surf_type] += [surface]
+            else:
+                surfaces_openmc_comparison[surf_type] = [surface]
+    
+    return surfaces_openmc_comparison
+
+def compare_surfaces(surfaces):
+
+    surfaces_openmc_comparison = get_surfaces_to_be_compared(surfaces)
+    surfaces_planes = {}
+    surfaces_others = {}
+    
+    for tipo, surfs in surfaces_openmc_comparison.items():
+        if tipo == 'plane':
+            for surf in surfs:
+                surfaces_planes[surf.id] = {'id':surf.id, 'kind': 'plane', 'coefficients': list(surf.coefficients.values())}
+        else:
+            for surf in surfs:
+                surfaces_others[surf.id] = {'id':surf.id, 'kind': tipo, 'coefficients': list(surf.coefficients.values())}
+    
+    
+    
+    identical_surfaces_planes = surfaces_comparison.compare(surfaces_planes, "Dynamic") 
+    identical_surfaces_others = surfaces_comparison.compare(surfaces_others, "Dynamic") 
+
+
+    identical_surfaces_temporary = identical_surfaces_planes | identical_surfaces_others
+
+    
+    identical_surfaces = {}
+    for k, v in identical_surfaces_temporary.items():
+        identical_surfaces[str(k)] = int((v/abs(v))*identical_surfaces.get(str(abs(v)), abs(v)))
+        if int(k) in identical_surfaces.values() or int(-1*int(k)) in identical_surfaces.values():
+            for k2, v2 in identical_surfaces.items():
+                if abs(int(v2)) == abs(int(k)):
+                    identical_surfaces[str(k2)] = int((v2/abs(v2))*v)
+    return identical_surfaces
+
+def reduce_general_plane_to_xyz(surfaces):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", openmc.IDWarning)
+        new_surfaces = {}
+        for k, surf in surfaces.items():
+            if surf.type == 'plane':
+                coeff = surf.coefficients
+                if coeff['a']==1 and coeff['b']==0 and coeff['c']==0:
+                    s = openmc.XPlane(x0=coeff['d'], surface_id=surf.id)
+                elif coeff['a']==0 and coeff['b']==1 and coeff['c']==0:
+                    s = openmc.XPlane(y0=coeff['d'], surface_id=surf.id)
+                elif coeff['a']==0 and coeff['b']==0 and coeff['c']==1:
+                    s = openmc.XPlane(z0=coeff['d'], surface_id=surf.id)
+                new_surfaces[k] = s
+            else:
+                new_surfaces[k] = surf
+    return new_surfaces
 
 def get_openmc_universes(cells, surfaces, materials, data):
     """Get OpenMC surfaces from MCNP surfaces
@@ -420,7 +493,17 @@ def get_openmc_universes(cells, surfaces, materials, data):
             for surf_id, surf in c['_region'].get_surfaces().items():
                 surfaces[surf_id] = surf
                 if isinstance(surf, surface_composite.CompositeSurface):
-                    surfaces.update((-surf).get_surfaces())
+                    surfaces_macrobodies = (-surf).get_surfaces()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", openmc.IDWarning)
+                        for i, s in surfaces_macrobodies.items():
+                            if s.type == 'x-plane':
+                                s = openmc.Plane(a=1, b=0, c=0, d=s.x0, surface_id=s.id)
+                            if s.type == 'y-plane':
+                                s = openmc.Plane(a=0, b=1, c=0, d=s.y0, surface_id=s.id) 
+                            if s.type == 'z-plane':
+                                s = openmc.Plane(a=0, b=0, c=1, d=s.z0, surface_id=s.id) 
+                            surfaces[i] = s
 
     has_cell_complement_ordered = []
     def add_to_ordered(c):
@@ -466,11 +549,20 @@ def get_openmc_universes(cells, surfaces, materials, data):
 
     # Now that all cell regions have been converted, the next loop is to create
     # actual Cell/Universe/Lattice objects
+    identical_surfaces = compare_surfaces(surfaces)
+    surfaces = reduce_general_plane_to_xyz(surfaces)
+    
     for c in cells:
         cell = openmc.Cell(cell_id=c['id'])
 
         # Assign region to cell based on expression
-        cell.region = c['_region']
+        cell_surfaces = c['_region'].get_surfaces()
+        region_definition = str(c['_region'])
+        to_be_replaced = [str(int(surf)) for surf in cell_surfaces if surf in identical_surfaces.keys()]
+        for surf_id in to_be_replaced:
+            surf_new = int(identical_surfaces[surf_id])
+            region_definition = region_definition.replace(f' -{surf_id} ', f' {int(-1*surf_new)} ').replace(f' {surf_id} ',f' {surf_new} ')
+        cell.region = openmc.Region.from_expression(region_definition, surfaces)
 
         # Add cell to universes if necessary
         if 'u' in c['parameters']:
