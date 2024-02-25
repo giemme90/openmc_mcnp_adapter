@@ -80,7 +80,15 @@ def get_openmc_materials(materials, cells):
         else:
             material = openmc.Material(m['id'])
             material.name = f'M{mcnp_mat_id} with density {density}'
+            norm_factor = sum([abs(percent) for _, percent in m['nuclides']])
+            nuclide_percent = {}
             for nuclide, percent in m['nuclides']:
+                if nuclide not in nuclide_percent.keys():
+                    nuclide_percent[nuclide] = percent/norm_factor
+                else:
+                    nuclide_percent[nuclide] += percent/norm_factor
+
+            for nuclide, percent in nuclide_percent.items():
                 if '.' in nuclide:
                     zaid, xs = nuclide.split('.')
                 else:
@@ -274,7 +282,7 @@ def get_openmc_surfaces(surfaces, data):
                     # decide if we want the up or down part of the
                     # cone since one sheet is used
                     up = grad >= 0
-                    surf = cls_cone(z0=offset, r2=angle, up=up)
+                    surf = cls_cone(**{f"{s['mnemonic']}0": offset, "r2": angle, "up": up})
             else:
                 raise NotImplementedError(f"{s['mnemonic']} surface with {len(coeffs)} parameters")
         elif s['mnemonic'] == 'rcc':
